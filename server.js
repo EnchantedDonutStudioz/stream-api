@@ -8,6 +8,15 @@ import { fetchSubtitles, handleSubtitleMovie, handleSubtitleTv, SUBTITLE_BASES }
 import { handleDownloadMovie, handleDownloadTv } from './routes/downloads.js';
 import { handleHealth } from './routes/health.js';
 
+const CUSTOM_PATH = (() => {
+    let path = process.env.CUSTOM_PATH ? process.env.CUSTOM_PATH.trim() : '';
+    if (path && !path.startsWith('/')) {
+        path = '/' + path;
+    }
+    path = path.replace(/\/+$/, '');
+    return path;
+})();
+
 async function umamiTrack(event, data = {}) {
     try {
         await fetch('https://cloud.umami.is/api/send', {
@@ -133,7 +142,7 @@ function rewriteM3u8(body, url, extraParam = '', absoluteBase = '') {
                 let decoded;
                 try { decoded = decodeURIComponent(httpsAbs); } catch { decoded = httpsAbs; }
                 const normalized = decoded.startsWith('http') ? decoded : httpsAbs;
-                return `URI="${safeBase}/api?url=${encodeURIComponent(normalized)}${extraParam}"`;
+                return `URI="${safeBase}${CUSTOM_PATH}/api?url=${encodeURIComponent(normalized)}${extraParam}"`;
             });
         }
         const abs = t.startsWith('http') ? t : t.startsWith('/') ? originBase + t : dir + t;
@@ -141,7 +150,7 @@ function rewriteM3u8(body, url, extraParam = '', absoluteBase = '') {
         let decoded;
         try { decoded = decodeURIComponent(httpsAbs); } catch { decoded = httpsAbs; }
         const normalized = decoded.startsWith('http') ? decoded : httpsAbs;
-        return safeBase + '/api?url=' + encodeURIComponent(normalized) + extraParam;
+        return safeBase + CUSTOM_PATH + '/api?url=' + encodeURIComponent(normalized) + extraParam;
     }).join('\n');
 }
 
@@ -196,7 +205,7 @@ function wrapUrl(rawUrl, sourceKey, absoluteBase = '') {
     const normalized = isLocalHost ? raw : raw.replace('http://', 'https://');
     const safeBase = isLocalHost ? absoluteBase : absoluteBase.replace('http://', 'https://');
 
-    let wrapped = `${safeBase}/api?url=` + encodeURIComponent(normalized) + '&' + cfg.proxyParam + '=1';
+    let wrapped = `${safeBase}${CUSTOM_PATH}/api?url=` + encodeURIComponent(normalized) + '&' + cfg.proxyParam + '=1';
     if (extraHeaders) {
         wrapped += '&proxyHeaders=' + encodeURIComponent(JSON.stringify(extraHeaders));
     }
@@ -449,14 +458,14 @@ function getIndexBody() {
 
     const samples = {
         movie: {
-            stream: '/api/movie?id=155',
-            downloads: '/api/downloads/movie/155',
-            subtitles: '/api/subtitles/movie/155',
+            stream: `${CUSTOM_PATH}/api/movie?id=155`,
+            downloads: `${CUSTOM_PATH}/api/downloads/movie/155`,
+            subtitles: `${CUSTOM_PATH}/api/subtitles/movie/155`,
         },
         tv: {
-            stream: '/api/tv?id=1396&season=1&episode=1',
-            downloads: '/api/downloads/tv/1396/1/1',
-            subtitles: '/api/subtitles/tv/76479/1/1',
+            stream: `${CUSTOM_PATH}/api/tv?id=1396&season=1&episode=1`,
+            downloads: `${CUSTOM_PATH}/api/downloads/tv/1396/1/1`,
+            subtitles: `${CUSTOM_PATH}/api/subtitles/tv/76479/1/1`,
         }
     };
 
@@ -464,8 +473,8 @@ function getIndexBody() {
         enabledSources.map(({ key }) => [
             key,
             {
-                movie: `/api/test/155?source=${key}`,
-                tv: `/api/test/1396?season=1&episode=1&source=${key}`,
+                movie: `${CUSTOM_PATH}/api/test/155?source=${key}`,
+                tv: `${CUSTOM_PATH}/api/test/1396?season=1&episode=1&source=${key}`,
             }
         ])
     );
@@ -473,17 +482,17 @@ function getIndexBody() {
     return JSON.stringify(
         {
             endpoints: {
-                movie: '/api/movie?id=<tmdb_id>',
-                tv: '/api/tv?id=<tmdb_id>&season=<s>&episode=<e>',
+                movie: `${CUSTOM_PATH}/api/movie?id=<tmdb_id>`,
+                tv: `${CUSTOM_PATH}/api/tv?id=<tmdb_id>&season=<s>&episode=<e>`,
                 downloads: {
-                    movie: '/api/downloads/movie/<tmdb_id>',
-                    tv: '/api/downloads/tv/<tmdb_id>/<season>/<episode>',
+                    movie: `${CUSTOM_PATH}/api/downloads/movie/<tmdb_id>`,
+                    tv: `${CUSTOM_PATH}/api/downloads/tv/<tmdb_id>/<season>/<episode>`,
                 },
                 subtitles: {
-                    movie: '/api/subtitles/movie/<tmdb_id>',
-                    tv: '/api/subtitles/tv/<tmdb_id>/<season>/<episode>',
+                    movie: `${CUSTOM_PATH}/api/subtitles/movie/<tmdb_id>`,
+                    tv: `${CUSTOM_PATH}/api/subtitles/tv/<tmdb_id>/<season>/<episode>`,
                 },
-                health: '/api/health',
+                health: `${CUSTOM_PATH}/api/health`,
             },
             tests: {
                 samples,
@@ -498,9 +507,16 @@ function getIndexBody() {
 async function handleRequest(req) {
     const baseUrl = `http://${req.headers.host || 'localhost'}`;
     const reqUrl = new URL(req.url, baseUrl);
-    const { pathname } = reqUrl;
+    let { pathname } = reqUrl;
     const q = Object.fromEntries(reqUrl.searchParams);
     const clientIP = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+
+    if (CUSTOM_PATH && pathname.startsWith(CUSTOM_PATH)) {
+        pathname = pathname.slice(CUSTOM_PATH.length);
+    }
+    if (pathname.startsWith('/pi')) {
+        pathname = '/api' + pathname.slice(3);
+    }
 
     const corsHeaders = {
         'Access-Control-Allow-Origin': '*',
